@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Cadastro de Usuários</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+    <style>
+        body {
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1024px;
+            margin: 24px auto;
+            background: #f3f5f8;
+            color: #1f2a44;
+        }
+        h1 { text-align: center; color: #1a4b8a; }
+        .grid { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; }
+        input { width: 100%; padding: 10px 8px; border: 1px solid #bfc9d9; border-radius: 6px; box-sizing: border-box; }
+        button {
+            width: 100%;
+            margin: 8px 0;
+            padding: 10px 12px;
+            border: none;
+            border-radius: 6px;
+            background: #1460c0;
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        button:hover { background: #0f4f9a; }
+        .output {
+            min-height: 230px;
+            padding: 12px;
+            border: 1px solid #d3d8e5;
+            border-radius: 6px;
+            background: #ffffff;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <h1>Cadastro de Usuários</h1>
+
+    <div class="grid">
+        <div>
+            <label>Nome <input id="nome"/></label>
+            <label>CPF <input id="cpf"/></label>
+            <label>Telefone <input id="telefone"/></label>
+            <label>Idade <input id="idade"/></label>
+            <label>Endereço <input id="endereco"/></label>
+            <label>Número <input id="numero"/></label>
+            <label>Escolaridade <input id="escolaridade"/></label>
+            <button id="btnCadastrar">Cadastrar</button>
+            <button id="btnListar">Listar</button>
+        </div>
+
+        <div>
+            <label>Busca por CPF <input id="cpfBusca"/></label>
+            <button id="btnBuscarCpf">Buscar CPF</button>
+
+            <label>Busca por nome <input id="nomeBusca"/></label>
+            <button id="btnBuscarNome">Buscar nome</button>
+
+            <label>Remover CPF <input id="cpfRemover"/></label>
+            <button id="btnRemover">Remover</button>
+        </div>
+    </div>
+
+    <h2>Saída</h2>
+    <div id="saida" class="output"></div>
+
+    <script>
+        let pyodide;
+        let usuario_add, usuario_listar, usuario_buscar, usuario_buscar_nome, usuario_remover;
+
+        function setSaida(text) {
+            document.getElementById("saida").textContent = text;
+        }
+
+        async function init() {
+            pyodide = await loadPyodide();
+            const script = `
+usuarios = []
+
+def limpar_numeros(texto):
+    return "".join(c for c in texto if c.isdigit())
+
+def format_cpf(cpf):
+    c = limpar_numeros(cpf)
+    if len(c) == 11:
+        return f"{c[:3]}.{c[3:6]}.{c[6:9]}-{c[9:]}"
+    return cpf.strip()
+
+def format_telefone(tel):
+    t = limpar_numeros(tel)
+    if len(t) == 10:
+        return f"({t[:2]}) {t[2:6]}-{t[6:]}"
+    if len(t) == 11:
+        return f"({t[:2]}) {t[2:7]}-{t[7:]}"
+    return tel.strip()
+
+def validar_cpf(cpf):
+    c = limpar_numeros(cpf)
+    if not c.isdigit() or len(c) != 11:
+        return False
+    if c == c[0] * 11:
+        return False
+    soma = sum(int(c[i]) * (10 - i) for i in range(9))
+    dig1 = (soma * 10 % 11) % 10
+    soma = sum(int(c[i]) * (11 - i) for i in range(10))
+    dig2 = (soma * 10 % 11) % 10
+    return dig1 == int(c[9]) and dig2 == int(c[10])
+
+def validar_telefone(tel):
+    t = limpar_numeros(tel)
+    return t.isdigit() and (10 <= len(t) <= 11)
+
+def sem_espacos(txt):
+    return " " not in txt.strip()
+
+def cadastrar(nome, cpf, telefone, idade, endereco, numero, escolaridade):
+    if not nome.strip():
+        return "Nome obrigatório."
+    if not (validar_cpf(cpf) and sem_espacos(cpf)):
+        return "CPF inválido."
+    if not validar_telefone(telefone):
+        return "Telefone inválido."
+    if not (idade.isdigit() and int(idade) > 0):
+        return "Idade inválida."
+    cpf_formatado = format_cpf(cpf)
+    telefone_formatado = format_telefone(telefone)
+    usuarios.append({
+        "nome": nome.strip(),
+        "cpf": cpf_formatado,
+        "telefone": telefone_formatado,
+        "idade": int(idade),
+        "endereco": endereco.strip(),
+        "numero": numero.strip(),
+        "escolaridade": escolaridade.strip(),
+    })
+    return f"✅ Usuário cadastrado (CPF: {cpf_formatado}, Tel: {telefone_formatado})"
+
+def listar():
+    if not usuarios:
+        return "Nenhum usuário cadastrado."
+    linhas = []
+    for i, u in enumerate(usuarios, 1):
+        linhas.append(
+            f"{i} - {u['nome']} | CPF: {u['cpf']} | Tel: {u['telefone']} | Idade: {u['idade']}"
+        )
+    return "\\n".join(linhas)
+
+def buscar(cpf):
+    chave = limpar_numeros(cpf)
+    for u in usuarios:
+        if limpar_numeros(u["cpf"]) == chave:
+            return f"Encontrado: {u['nome']} (CPF: {u['cpf']} | Tel: {u['telefone']})"
+    return "❌ Não encontrado."
+
+def buscar_por_nome(nome):
+    chave = nome.strip().lower()
+    encontrados = [u for u in usuarios if chave in u["nome"].lower()]
+    if not encontrados:
+        return "❌ Nenhum encontrado."
+    return "\\n".join(
+        f"{u['nome']} (CPF: {u['cpf']} | Tel: {u['telefone']})"
+        for u in encontrados
+    )
+
+def remover(cpf):
+    chave = limpar_numeros(cpf)
+    for u in usuarios:
+        if limpar_numeros(u["cpf"]) == chave:
+            usuarios.remove(u)
+            return "✅ Removido."
+    return "❌ Não encontrado."
+`;
+            pyodide.runPython(script);
+
+            usuario_add = pyodide.globals.get("cadastrar");
+            usuario_listar = pyodide.globals.get("listar");
+            usuario_buscar = pyodide.globals.get("buscar");
+            usuario_buscar_nome = pyodide.globals.get("buscar_por_nome");
+            usuario_remover = pyodide.globals.get("remover");
+        }
+
+        document.getElementById("btnCadastrar").onclick = () => {
+            const res = usuario_add(
+                document.getElementById("nome").value,
+                document.getElementById("cpf").value,
+                document.getElementById("telefone").value,
+                document.getElementById("idade").value,
+                document.getElementById("endereco").value,
+                document.getElementById("numero").value,
+                document.getElementById("escolaridade").value
+            );
+            setSaida(res);
+        };
+
+        document.getElementById("btnListar").onclick = () => setSaida(usuario_listar());
+        document.getElementById("btnBuscarCpf").onclick = () => setSaida(usuario_buscar(document.getElementById("cpfBusca").value));
+        document.getElementById("btnBuscarNome").onclick = () => setSaida(usuario_buscar_nome(document.getElementById("nomeBusca").value));
+        document.getElementById("btnRemover").onclick = () => setSaida(usuario_remover(document.getElementById("cpfRemover").value));
+
+        init();
+    </script>
+</body>
+</html>
